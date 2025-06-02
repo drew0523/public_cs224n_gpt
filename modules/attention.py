@@ -48,7 +48,7 @@ class CausalSelfAttention(nn.Module):
     scores = scores + attention_mask
 
     attn_probs = nn.functional.softmax(scores, dim=-1)
-    attn_probs = self.dropout(attn_probs)
+    #attn_probs = self.dropout(attn_probs)
 
     context = torch.matmul(attn_probs, value)
 
