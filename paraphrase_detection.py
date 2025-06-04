@@ -129,6 +129,10 @@ def train(args):
       b_ids = b_ids.to(device)
       b_mask = b_mask.to(device)
       labels = labels.to(device)
+      # print("labels:", labels) 
+      # print("unique labels:", torch.unique(labels))
+
+      # assert torch.all((labels >= 0) & (labels < 2)), "outofclassidx"
 
       # Compute the loss, gradients, and update the model's parameters.
       optimizer.zero_grad()
