@@ -272,7 +272,17 @@ def train(args):
 
   model = GPT2SentimentClassifier(config)
   model = model.to(device)
-
+ # ─── 여기에 검증용 코드 추가 ───
+  print("--- 학습 가능한(Requires_grad=True) 파라미터 목록 ---")
+  for name, param in model.named_parameters():
+      if param.requires_grad:
+          print(f"{name:50} |  shape: {tuple(param.shape)}")
+  print("총 학습 가능 파라미터 개수:", 
+        sum(param.numel() for param in model.parameters() if param.requires_grad))
+  print("총 파라미터 개수:", 
+        sum(param.numel() for param in model.parameters()))
+  print("-----------------------------------------------\n")
+  # ──────────────────────────────────────────────────
   lr = args.lr
   optimizer = AdamW(model.parameters(), lr=lr)
   best_dev_acc = 0
