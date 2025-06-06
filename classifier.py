@@ -43,15 +43,8 @@ class GPT2SentimentClassifier(torch.nn.Module):
   def __init__(self, config):
     super(GPT2SentimentClassifier, self).__init__()
     self.num_labels = config.num_labels
-    #for LoRA by MJK START
-    # self.gpt = GPT2Model.from_pretrained()
-    self.gpt = GPT2Model.from_pretrained(
-        model="gpt2",    # Hugging Face Hub의 gpt2 코드를 다운받아 옴
-        d=config.hidden_size, 
-        l=config.num_hidden_layers, 
-        num_heads=config.num_attention_heads
-    )
-    #for LoRA by MJK END
+    self.gpt = GPT2Model.from_pretrained()
+
 
     # Pretrain mode does not require updating GPT paramters.
     assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
@@ -274,7 +267,9 @@ def train(args):
             'num_labels': num_labels,
             'hidden_size': 768,
             'data_dir': '.',
-            'fine_tune_mode': args.fine_tune_mode}
+            'fine_tune_mode': args.fine_tune_mode,
+            'num_hidden_layers': 12,
+            }
 
   config = SimpleNamespace(**config)
 
