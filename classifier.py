@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2Tokenizer
 from sklearn.metrics import f1_score, accuracy_score
-
+from models.loar_utils import param_by_option
 from models.gpt2 import GPT2Model
 from optimizer import AdamW
 from tqdm import tqdm
@@ -46,13 +46,13 @@ class GPT2SentimentClassifier(torch.nn.Module):
     self.gpt = GPT2Model.from_pretrained()
 
     # Pretrain mode does not require updating GPT paramters.
-    assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
-    for param in self.gpt.parameters():
-      if config.fine_tune_mode == 'last-linear-layer':
-        param.requires_grad = False
-      elif config.fine_tune_mode == 'full-model':
-        param.requires_grad = True
-
+    # assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
+    # for param in self.gpt.parameters():
+    #   if config.fine_tune_mode == 'last-linear-layer':
+    #     param.requires_grad = False
+    #   elif config.fine_tune_mode == 'full-model':
+    #     param.requires_grad = True
+    param_by_option(config, self.gpt)
     ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
     ### YOUR CODE HERE
     self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
