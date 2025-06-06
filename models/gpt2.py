@@ -115,9 +115,9 @@ class GPT2Model(GPTPreTrainedModel):
     return torch.matmul(hidden_state, E.t())
 
   @classmethod
-  def from_pretrained(cls, model_name: str = "gpt2"):
+  def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12):
     # 1) Hugging Face GPT-2 모델과 config 가져오기
-    hf_model = OpenAIGPT2Model.from_pretrained(model_name).eval()
+    hf_model = OpenAIGPT2Model.from_pretrained(model).eval()
     hf_cfg   = hf_model.config   # 여기엔 .n_embd, .n_layer, .n_head 등이 있다
 
     # 2) 우리 GPT2Config 에 "올바른 속성 이름"으로 채워 넣기
