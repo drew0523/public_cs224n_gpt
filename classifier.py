@@ -13,11 +13,11 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2Tokenizer
 from sklearn.metrics import f1_score, accuracy_score
-
+from models.loar_utils import param_by_option
 from models.gpt2 import GPT2Model
 from optimizer import AdamW
 from tqdm import tqdm
-from models.loar_utils import apply_lora_freeze
+
 TQDM_DISABLE = False
 
 
@@ -45,7 +45,6 @@ class GPT2SentimentClassifier(torch.nn.Module):
     self.num_labels = config.num_labels
     self.gpt = GPT2Model.from_pretrained()
 
-
     # Pretrain mode does not require updating GPT paramters.
     # assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
     # for param in self.gpt.parameters():
@@ -53,9 +52,7 @@ class GPT2SentimentClassifier(torch.nn.Module):
     #     param.requires_grad = False
     #   elif config.fine_tune_mode == 'full-model':
     #     param.requires_grad = True
-    assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
-    apply_lora_freeze(self.gpt, freeze_gpt=(config.fine_tune_mode == 'last-linear-layer'))
-
+    param_by_option(config, self.gpt)
     ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
     ### YOUR CODE HERE
     self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
@@ -83,7 +80,7 @@ class SentimentDataset(Dataset):
   def __init__(self, dataset, args):
     self.dataset = dataset
     self.p = args
-    self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2', timeout=120)
+    self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
   def __len__(self):
@@ -275,17 +272,7 @@ def train(args):
 
   model = GPT2SentimentClassifier(config)
   model = model.to(device)
- # ─── 여기에 검증용 코드 추가 ───
-  print("--- 학습 가능한(Requires_grad=True) 파라미터 목록 ---")
-  for name, param in model.named_parameters():
-      if param.requires_grad:
-          print(f"{name:50} |  shape: {tuple(param.shape)}")
-  print("총 학습 가능 파라미터 개수:", 
-        sum(param.numel() for param in model.parameters() if param.requires_grad))
-  print("총 파라미터 개수:", 
-        sum(param.numel() for param in model.parameters()))
-  print("-----------------------------------------------\n")
-  # ──────────────────────────────────────────────────
+
   lr = args.lr
   optimizer = AdamW(model.parameters(), lr=lr)
   best_dev_acc = 0
