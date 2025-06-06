@@ -19,10 +19,24 @@ def apply_lora_freeze(model: torch.nn.Module, freeze_gpt: bool=True):
 
 def param_by_option(config, model):
     assert config.fine_tune_mode in ["last-linear-layer", "full-model", "LoRA"]
-    for param in model.gpt.parameters():
+    for param in model.parameters():
       if config.fine_tune_mode == 'last-linear-layer':
         param.requires_grad = False
       elif config.fine_tune_mode == 'full-model':
         param.requires_grad = True
       elif config.fine_tune_mode == 'LoRA':
-        apply_lora_freeze(model.gpt, freeze_gpt=True)
+        apply_lora_freeze(model, freeze_gpt=True)
+
+
+def print_param_info(model):
+      # ─── 여기에 검증용 코드 추가 ───
+    print("--- 학습 가능한(Requires_grad=True) 파라미터 목록 ---")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"{name:50} |  shape: {tuple(param.shape)}")
+    print("총 학습 가능 파라미터 개수:", 
+          sum(param.numel() for param in model.parameters() if param.requires_grad))
+    print("총 파라미터 개수:", 
+          sum(param.numel() for param in model.parameters()))
+    print("-----------------------------------------------\n")
+    # ──────────────────────────────────────────────────
