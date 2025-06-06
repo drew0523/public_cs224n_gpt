@@ -151,7 +151,7 @@ class GPT2Model(GPTPreTrainedModel):
     # 5) Transformer 레이어별 weight 복사: 'hf_cfg.n_layer'만큼 순회
     for i in range(hf_cfg.n_layer):
       our_layer = our_model.gpt_layers[i]
-      hf_layer  = hf_model.transformer.h[i]
+      hf_layer  = hf_model.h[i]
 
       # 5-a) c_attn (Q/K/V 묶음) → Query/Key/Value로 나눠서 복사
       c_attn_w = hf_layer.attn.c_attn.weight.data   # [n_embd, 3*n_embd]
@@ -187,7 +187,7 @@ class GPT2Model(GPTPreTrainedModel):
       our_layer.out_layer_norm.bias.data.copy_(hf_layer.ln_2.bias.data)
 
     # 6) 마지막 final LayerNorm (ln_f)
-    our_model.final_layer_norm.weight.data.copy_(hf_model.transformer.ln_f.weight.data)
-    our_model.final_layer_norm.bias.data.copy_(hf_model.transformer.ln_f.bias.data)
+    our_model.final_layer_norm.weight.data.copy_(hf_model.ln_f.weight.data)
+    our_model.final_layer_norm.bias.data.copy_(hf_model.ln_f.bias.data)
 
     return our_model
