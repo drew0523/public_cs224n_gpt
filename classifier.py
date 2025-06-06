@@ -80,7 +80,7 @@ class SentimentDataset(Dataset):
   def __init__(self, dataset, args):
     self.dataset = dataset
     self.p = args
-    self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2', timeout=120)
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
   def __len__(self):
