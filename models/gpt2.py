@@ -118,8 +118,23 @@ class GPT2Model(GPTPreTrainedModel):
   @classmethod
   def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12):
     gpt_model = OpenAIGPT2Model.from_pretrained(model).eval()
-    our_model = GPT2Model(GPT2Config(hidden_size=d, num_hidden_layers=l,num_attention_heads=num_heads,
-                                     intermediate_size=d*3)).eval()
+    #for LoRA by MJK START
+    gpt_cfg = gpt_model.config
+    our_cfg = GPT2Config(
+        hidden_size=gpt_cfg.hidden_size,
+        num_hidden_layers=gpt_cfg.n_layer,
+        num_attention_heads=gpt_cfg.n_head,
+        intermediate_size=gpt_cfg.hidden_size * 3,
+        hidden_dropout_prob=gpt_cfg.resid_pdrop,
+        layer_norm_eps=gpt_cfg.layer_norm_epsilon,
+        vocab_size=gpt_cfg.vocab_size,
+        max_position_embeddings=gpt_cfg.n_positions,
+        pad_token_id=gpt_cfg.eos_token_id,
+    )
+    our_model = GPT2Model(our_cfg).eval()
+    #for LoRA by MJK END
+    # our_model = GPT2Model(GPT2Config(hidden_size=d, num_hidden_layers=l,num_attention_heads=num_heads,
+                                    #  intermediate_size=d*3)).eval()
 
     # Load word and positional embeddings.
     our_model.word_embedding.load_state_dict(gpt_model.wte.state_dict())
