@@ -146,7 +146,7 @@ class GPT2Model(GPTPreTrainedModel):
     # )
    # GPT2Model 내부에서 positional embedding은 transformer.wpe 에 있음
     our_model.pos_embedding.load_state_dict(
-      hf_model.transformer.wpe.state_dict()
+      hf_model.wpe.state_dict()
     )
     # 5) Transformer 레이어별 weight 복사: 'hf_cfg.n_layer'만큼 순회
     for i in range(hf_cfg.n_layer):
