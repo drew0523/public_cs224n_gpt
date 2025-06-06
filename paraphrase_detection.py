@@ -214,7 +214,9 @@ def get_args():
   parser.add_argument("--model_size", type=str,
                       help="The model size as specified on hugging face. DO NOT use the xl model.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large'], default='gpt2')
-
+  parser.add_argument("--fine-tune-mode", type=str,
+                      help='last-linear-layer: the GPT parameters are frozen and the task specific head parameters are updated; full-model: GPT parameters are updated as well',
+                      choices=('last-linear-layer', 'full-model', 'LoRA'), default="full-model")
   args = parser.parse_args()
   return args
 
