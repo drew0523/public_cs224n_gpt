@@ -116,7 +116,8 @@ class GPT2Model(GPTPreTrainedModel):
 
 
   @classmethod
-  def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12):
+  # def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12):
+  def from_pretrained(cls, model='gpt2'):
     gpt_model = OpenAIGPT2Model.from_pretrained(model).eval()
     #for LoRA by MJK START
     gpt_cfg = gpt_model.config
