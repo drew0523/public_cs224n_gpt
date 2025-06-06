@@ -123,7 +123,7 @@ class GPT2Model(GPTPreTrainedModel):
     gpt_cfg = gpt_model.config
     our_cfg = GPT2Config(
         hidden_size=gpt_cfg.hidden_size,
-        num_hidden_layers=gpt_cfg.n_layer,
+        # num_hidden_layers=gpt_cfg.n_layer,
         num_attention_heads=gpt_cfg.n_head,
         intermediate_size=gpt_cfg.hidden_size * 3,
         hidden_dropout_prob=gpt_cfg.resid_pdrop,
