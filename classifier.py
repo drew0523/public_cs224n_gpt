@@ -269,9 +269,7 @@ def train(args):
             'num_labels': num_labels,
             'hidden_size': 768,
             'data_dir': '.',
-            'fine_tune_mode': args.fine_tune_mode,
-            'num_hidden_layers': 12,
-            }
+            'fine_tune_mode': args.fine_tune_mode}
 
   config = SimpleNamespace(**config)
 
