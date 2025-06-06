@@ -125,7 +125,7 @@ class GPT2Model(GPTPreTrainedModel):
       hidden_size = hf_cfg.n_embd,                     # n_embd를 hidden_size로
       num_hidden_layers   = hf_cfg.n_layer,            # n_layer
       num_attention_heads = hf_cfg.n_head,             # n_head
-      intermediate_size   = hf_cfg.n_embd * 3,          # (원래는 4×지만, 예제에선 3×)
+      intermediate_size   = hf_cfg.n_embd * 4,          # (원래는 4×지만, 예제에선 3×)
       hidden_dropout_prob = hf_cfg.resid_pdrop,
       layer_norm_eps      = hf_cfg.layer_norm_epsilon,
       vocab_size          = hf_cfg.vocab_size,
