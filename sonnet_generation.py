@@ -62,7 +62,7 @@ class SonnetGPT(nn.Module):
     # By default, fine-tune the full model. TODO: this is maybe not idea.
     # for param in self.gpt.parameters():
     #   param.requires_grad = True
-    param_by_option(config, self.gpt)
+    param_by_option(args, self.gpt)
     print_param_info(self.gpt)
   def forward(self, input_ids, attention_mask):
     """
