@@ -32,6 +32,7 @@ from models.gpt2 import GPT2Model
 
 from optimizer import AdamW
 
+from models.loar_utils import param_by_option, print_param_info
 TQDM_DISABLE = False
 
 # Fix the random seed.
@@ -54,9 +55,10 @@ class ParaphraseGPT(nn.Module):
     self.paraphrase_detection_head = nn.Linear(args.d, 2)  # Paraphrase detection has two outputs: 1 (yes) or 0 (no).
 
     # By default, fine-tune the full model.
-    for param in self.gpt.parameters():
-      param.requires_grad = True
-
+    # for param in self.gpt.parameters():
+    #   param.requires_grad = True
+    param_by_option(config, self.gpt)
+    print_param_info(self.gpt)
   def forward(self, input_ids, attention_mask):
     """
     TODO: Predict the label of the token using the paraphrase_detection_head Linear layer.

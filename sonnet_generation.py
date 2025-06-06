@@ -29,7 +29,7 @@ from models.gpt2 import GPT2Model
 from optimizer import AdamW
 
 import sys
-
+from models.loar_utils import param_by_option, print_param_info
 # Resolve unicode error
 if sys.platform.startswith('win'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -60,9 +60,10 @@ class SonnetGPT(nn.Module):
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
     # By default, fine-tune the full model. TODO: this is maybe not idea.
-    for param in self.gpt.parameters():
-      param.requires_grad = True
-
+    # for param in self.gpt.parameters():
+    #   param.requires_grad = True
+    param_by_option(config, self.gpt)
+    print_param_info(self.gpt)
   def forward(self, input_ids, attention_mask):
     """
     This is similar to the forward for ParaphraseGPT, but we now want to produce a logit for each token in our sequence;
