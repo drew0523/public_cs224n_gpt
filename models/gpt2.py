@@ -114,63 +114,76 @@ class GPT2Model(GPTPreTrainedModel):
     
     return torch.matmul(hidden_state, E.t())
 
+@classmethod
+def from_pretrained(cls, model_name: str = "gpt2"):
+  # 1) Hugging Face GPT-2 모델과 config 가져오기
+  hf_model = OpenAIGPT2Model.from_pretrained(model_name).eval()
+  hf_cfg   = hf_model.config   # 여기엔 .n_embd, .n_layer, .n_head 등이 있다
 
-  @classmethod
-  def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12):
-  # def from_pretrained(cls, model='gpt2'):
-    gpt_model = OpenAIGPT2Model.from_pretrained(model).eval()
-    #for LoRA by MJK START
-    gpt_cfg = gpt_model.config
-    our_cfg = GPT2Config(
-        hidden_size=gpt_cfg.hidden_size,
-        # num_hidden_layers=gpt_cfg.n_layer,
-        num_attention_heads=gpt_cfg.n_head,
-        intermediate_size=gpt_cfg.hidden_size * 3,
-        hidden_dropout_prob=gpt_cfg.resid_pdrop,
-        layer_norm_eps=gpt_cfg.layer_norm_epsilon,
-        vocab_size=gpt_cfg.vocab_size,
-        max_position_embeddings=gpt_cfg.n_positions,
-        pad_token_id=gpt_cfg.eos_token_id,
-    )
-    our_model = GPT2Model(our_cfg).eval()
-    #for LoRA by MJK END
-    # our_model = GPT2Model(GPT2Config(hidden_size=d, num_hidden_layers=l,num_attention_heads=num_heads,
-                                    #  intermediate_size=d*3)).eval()
+  # 2) 우리 GPT2Config 에 "올바른 속성 이름"으로 채워 넣기
+  our_cfg = GPT2Config(
+    hidden_size = hf_cfg.n_embd,                     # n_embd를 hidden_size로
+    num_hidden_layers   = hf_cfg.n_layer,            # n_layer
+    num_attention_heads = hf_cfg.n_head,             # n_head
+    intermediate_size   = hf_cfg.n_embd * 3,          # (원래는 4×지만, 예제에선 3×)
+    hidden_dropout_prob = hf_cfg.resid_pdrop,
+    layer_norm_eps      = hf_cfg.layer_norm_epsilon,
+    vocab_size          = hf_cfg.vocab_size,
+    max_position_embeddings = hf_cfg.n_positions,
+    pad_token_id        = hf_cfg.eos_token_id,
+  )
 
-    # Load word and positional embeddings.
-    our_model.word_embedding.load_state_dict(gpt_model.wte.state_dict())
-    our_model.pos_embedding.load_state_dict(gpt_model.wpe.state_dict())
+  # 3) LoRA가 포함된 구조로 모델 생성 (랜덤 초기화 상태)
+  our_model = GPT2Model(our_cfg).eval()
 
-    for i in range(l):
-      l = our_model.gpt_layers[i]
-      # Remap the Q,K,V weights from a conv1d to 3 linear projections
-      l.self_attention.query.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, :d].T
-      l.self_attention.query.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][:d]
-      l.self_attention.key.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, d:d*2].T
-      l.self_attention.key.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d:d*2]
-      l.self_attention.value.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, d*2:].T
-      l.self_attention.value.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d*2:]
+  # 4) Embedding weight 덮어쓰기
+  our_model.word_embedding.load_state_dict(
+    hf_model.get_input_embeddings().state_dict()
+  )
+  our_model.pos_embedding.load_state_dict(
+    hf_model.get_position_embeddings().state_dict()
+  )
 
-      # Remap final dense layer in MHA.
-      l.attention_dense.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_proj.weight'].T
-      l.attention_dense.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_proj.bias']
+  # 5) Transformer 레이어별 weight 복사: 'hf_cfg.n_layer'만큼 순회
+  for i in range(hf_cfg.n_layer):
+    our_layer = our_model.gpt_layers[i]
+    hf_layer  = hf_model.transformer.h[i]
 
-      # Remap attention layer norm.
-      l.attention_layer_norm.weight.data = gpt_model.state_dict()[f'h.{i}.ln_1.weight']
-      l.attention_layer_norm.bias.data = gpt_model.state_dict()[f'h.{i}.ln_1.bias']
+    # 5-a) c_attn (Q/K/V 묶음) → Query/Key/Value로 나눠서 복사
+    c_attn_w = hf_layer.attn.c_attn.weight.data   # [n_embd, 3*n_embd]
+    c_attn_b = hf_layer.attn.c_attn.bias.data     # [3*n_embd]
+    d = hf_cfg.n_embd
 
-      # Remap post-attention MLP layers.
-      l.interm_dense.weight.data = gpt_model.state_dict()[f'h.{i}.mlp.c_fc.weight'].T
-      l.interm_dense.bias.data = gpt_model.state_dict()[f'h.{i}.mlp.c_fc.bias']
-      l.out_dense.weight.data = gpt_model.state_dict()[f'h.{i}.mlp.c_proj.weight'].T
-      l.out_dense.bias.data = gpt_model.state_dict()[f'h.{i}.mlp.c_proj.bias']
+    # Query
+    our_layer.self_attention.query.weight.data.copy_(c_attn_w[:, :d].T)
+    our_layer.self_attention.query.bias.data.copy_(c_attn_b[:d])
+    # Key
+    our_layer.self_attention.key.weight.data.copy_(c_attn_w[:, d:2*d].T)
+    our_layer.self_attention.key.bias.data.copy_(c_attn_b[d:2*d])
+    # Value
+    our_layer.self_attention.value.weight.data.copy_(c_attn_w[:, 2*d:3*d].T)
+    our_layer.self_attention.value.bias.data.copy_(c_attn_b[2*d:3*d])
 
-      # Remap second layer norm weights.
-      l.out_layer_norm.weight.data = gpt_model.state_dict()[f'h.{i}.ln_2.weight']
-      l.out_layer_norm.bias.data = gpt_model.state_dict()[f'h.{i}.ln_2.bias']
+    # 5-b) attention_dense (c_proj)
+    our_layer.attention_dense.weight.data.copy_(hf_layer.attn.c_proj.weight.data.T)
+    our_layer.attention_dense.bias.data.copy_(hf_layer.attn.c_proj.bias.data)
 
-    # Remap the final layer norm values.
-    our_model.final_layer_norm.weight.data = gpt_model.state_dict()['ln_f.weight']
-    our_model.final_layer_norm.bias.data = gpt_model.state_dict()['ln_f.bias']
+    # 5-c) attention LayerNorm (ln_1)
+    our_layer.attention_layer_norm.weight.data.copy_(hf_layer.ln_1.weight.data)
+    our_layer.attention_layer_norm.bias.data.copy_(hf_layer.ln_1.bias.data)
 
-    return our_model
+    # 5-d) MLP (c_fc + c_proj)
+    our_layer.interm_dense.weight.data.copy_(hf_layer.mlp.c_fc.weight.data.T)
+    our_layer.interm_dense.bias.data.copy_(hf_layer.mlp.c_fc.bias.data)
+    our_layer.out_dense.weight.data.copy_(hf_layer.mlp.c_proj.weight.data.T)
+    our_layer.out_dense.bias.data.copy_(hf_layer.mlp.c_proj.bias.data)
+
+    # 5-e) Feed-forward LayerNorm (ln_2)
+    our_layer.out_layer_norm.weight.data.copy_(hf_layer.ln_2.weight.data)
+    our_layer.out_layer_norm.bias.data.copy_(hf_layer.ln_2.bias.data)
+
+  # 6) 마지막 final LayerNorm (ln_f)
+  our_model.final_layer_norm.weight.data.copy_(hf_model.transformer.ln_f.weight.data)
+  our_model.final_layer_norm.bias.data.copy_(hf_model.transformer.ln_f.bias.data)
+
+  return our_model
