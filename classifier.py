@@ -17,7 +17,7 @@ from sklearn.metrics import f1_score, accuracy_score
 from models.gpt2 import GPT2Model
 from optimizer import AdamW
 from tqdm import tqdm
-
+from models.loar_utils import apply_lora_freeze
 TQDM_DISABLE = False
 
 
@@ -47,12 +47,14 @@ class GPT2SentimentClassifier(torch.nn.Module):
 
 
     # Pretrain mode does not require updating GPT paramters.
+    # assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
+    # for param in self.gpt.parameters():
+    #   if config.fine_tune_mode == 'last-linear-layer':
+    #     param.requires_grad = False
+    #   elif config.fine_tune_mode == 'full-model':
+    #     param.requires_grad = True
     assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
-    for param in self.gpt.parameters():
-      if config.fine_tune_mode == 'last-linear-layer':
-        param.requires_grad = False
-      elif config.fine_tune_mode == 'full-model':
-        param.requires_grad = True
+    apply_lora_freeze(self.gpt, freeze_gpt=(config.fine_tune_mode == 'last-linear-layer'))
 
     ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
     ### YOUR CODE HERE
