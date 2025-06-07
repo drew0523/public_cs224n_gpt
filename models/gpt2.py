@@ -43,28 +43,41 @@ class GPT2Model(GPTPreTrainedModel):
 
     self.init_weights()
 
-  def embed(self, input_ids):
-    input_shape = input_ids.size()
-    seq_length = input_shape[1]
+  # def embed(self, input_ids):
+  #   input_shape = input_ids.size()
+  #   seq_length = input_shape[1]
 
-    inputs_embeds = None
+  #   inputs_embeds = None
 
-    ### YOUR CODE HERE
-    input_embeds = self.word_embedding(input_ids)
+  #   ### YOUR CODE HERE
+  #   input_embeds = self.word_embedding(input_ids)
 
+  #   pos_ids = self.position_ids[:, :seq_length]
+  #   pos_embeds = None
+
+  #   ### TODO: Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
+  #   ###       Then, add two embeddings together; then apply dropout and return.
+  #   ### YOUR CODE HERE
+  #   pos_embeds = self.pos_embedding(pos_ids)
+
+  #   hidden_states = input_embeds + pos_embeds
+  #   hidden_states = self.embed_dropout(hidden_states)
+
+  #   return hidden_states
+
+  def embed(self, input_ids=None, inputs_embeds=None):
+    if inputs_embeds is None:
+        input_embeds = self.word_embedding(input_ids)
+    else:
+        input_embeds = inputs_embeds
+
+    seq_length = input_embeds.size(1)
     pos_ids = self.position_ids[:, :seq_length]
-    pos_embeds = None
-
-    ### TODO: Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
-    ###       Then, add two embeddings together; then apply dropout and return.
-    ### YOUR CODE HERE
     pos_embeds = self.pos_embedding(pos_ids)
 
     hidden_states = input_embeds + pos_embeds
     hidden_states = self.embed_dropout(hidden_states)
-
     return hidden_states
-
 
   def encode(self, hidden_states, attention_mask):
     """
@@ -84,23 +97,48 @@ class GPT2Model(GPTPreTrainedModel):
 
     return hidden_states
 
-  def forward(self, input_ids, attention_mask):
-    """
-    input_ids: [batch_size, seq_len], seq_len is the max length of the batch
-    attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
-    """
-    # Get the embedding for each input token.
-    embedding_output = self.embed(input_ids=input_ids)
+  # def forward(self, input_ids, attention_mask):
+  #   """
+  #   input_ids: [batch_size, seq_len], seq_len is the max length of the batch
+  #   attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
+  #   """
+  #   # Get the embedding for each input token.
+  #   embedding_output = self.embed(input_ids=input_ids)
 
-    # Feed to a transformer (a stack of GPTLayers).
+  #   # Feed to a transformer (a stack of GPTLayers).
+  #   sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
+  #   sequence_output = self.final_layer_norm(sequence_output)
+
+  #   # Get the hidden state of the final token.
+  #   last_non_pad_idx = attention_mask.sum(dim=1) - 1  # Subtract 1 to get last index
+  #   last_token = sequence_output[torch.arange(sequence_output.shape[0]), last_non_pad_idx]
+
+  #   return {'last_hidden_state': sequence_output, 'last_token': last_token}
+  def forward(self, input_ids=None, attention_mask=None, inputs_embeds=None, **kwargs):
+    embedding_output = self.embed(input_ids=input_ids, inputs_embeds=inputs_embeds)
     sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
     sequence_output = self.final_layer_norm(sequence_output)
 
-    # Get the hidden state of the final token.
-    last_non_pad_idx = attention_mask.sum(dim=1) - 1  # Subtract 1 to get last index
+    last_non_pad_idx = attention_mask.sum(dim=1) - 1
     last_token = sequence_output[torch.arange(sequence_output.shape[0]), last_non_pad_idx]
 
     return {'last_hidden_state': sequence_output, 'last_token': last_token}
+  def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **kwargs):
+    # HuggingFace의 GPT2LMHeadModel에서 따온 기본 구현입니다.
+    if past_key_values is not None:
+        input_ids = input_ids[:, -1].unsqueeze(-1)  # only last token for generation
+
+    return {
+        "input_ids": input_ids,
+        "past_key_values": past_key_values,
+        "attention_mask": attention_mask,
+        **kwargs,
+    }
+  def get_input_embeddings(self):
+    return self.word_embedding
+  def set_input_embeddings(self, new_embeddings):
+    self.word_embedding = new_embeddings
+
 
   def hidden_state_to_token(self, hidden_state):
     """

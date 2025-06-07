@@ -14,7 +14,6 @@ trains and evaluates your ParaphraseGPT model and writes the required submission
 import argparse
 import random
 import torch
-from transformers import AutoModel,GPT2Config
 from peft import get_peft_model, LoraConfig, TaskType
 import numpy as np
 import torch.nn.functional as F
@@ -51,12 +50,8 @@ class ParaphraseGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    config = GPT2Config.from_pretrained(args.model_size)
-    config.d = args.d
-    config.l = args.l
-    config.num_heads = args.num_heads
-    self.gpt = AutoModel.from_pretrained(pretrained_model_name_or_path=args.model_size, config = config)
-    #self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
+
+    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.paraphrase_detection_head = nn.Linear(args.d, 2)  # Paraphrase detection has two outputs: 1 (yes) or 0 (no).
 
     # By default, fine-tune the full model.
@@ -71,13 +66,13 @@ class ParaphraseGPT(nn.Module):
 
     elif args.fine_tune_mode == 'LoRA':
       peft_config = LoraConfig(
-        r=4,
-        lora_alpha=16,
+        r=8,
+        lora_alpha=32,
         lora_dropout=0.1,
         bias="none",
-        target_modules=["c_attn"],
+        target_modules=["query", "key", "value", "attention_dense"],
         fan_in_fan_out=True,
-        task_type=TaskType.FEATURE_EXTRACTION  # GPT2Model은 CausalLM이 아님
+        task_type=TaskType.FEATURE_EXTRACTION   # GPT2Model은 CausalLM이 아님
       )
       self.gpt = get_peft_model(self.gpt, peft_config)
       self.gpt.print_trainable_parameters()
@@ -99,9 +94,9 @@ class ParaphraseGPT(nn.Module):
     # raise NotImplementedError
     output = self.gpt(input_ids, attention_mask=attention_mask)
     sequence_output = output['last_hidden_state']
-    # last_token = output['last_token']
-    last_hidden = output.last_hidden_state  # [B, T, H]
-    last_token = last_hidden[:, -1, :]  
+    last_token = output['last_token']
+    # last_hidden = output.last_hidden_state  # [B, T, H]
+    # last_token = last_hidden[:, -1, :]  
     logits = self.paraphrase_detection_head(last_token)
     return logits
 

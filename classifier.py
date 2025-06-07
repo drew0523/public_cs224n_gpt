@@ -13,7 +13,6 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2Tokenizer
 from sklearn.metrics import f1_score, accuracy_score
-from transformers import AutoModel
 from peft import get_peft_model, LoraConfig, TaskType
 from models.gpt2 import GPT2Model
 from optimizer import AdamW
@@ -44,7 +43,7 @@ class GPT2SentimentClassifier(torch.nn.Module):
   def __init__(self, config):
     super(GPT2SentimentClassifier, self).__init__()
     self.num_labels = config.num_labels
-    self.gpt = AutoModel.from_pretrained('gpt2')
+    self.gpt = GPT2Model.from_pretrained()
 
     # Pretrain mode does not require updating GPT paramters.
     assert config.fine_tune_mode in ["last-linear-layer", "full-model", "LoRA"]
@@ -58,17 +57,16 @@ class GPT2SentimentClassifier(torch.nn.Module):
 
     elif config.fine_tune_mode == 'LoRA':
       peft_config = LoraConfig(
-        r=4,
-        lora_alpha=16,
+        r=8,
+        lora_alpha=32,
         lora_dropout=0.1,
         bias="none",
-        target_modules=["c_attn"],
+        target_modules=["query", "key", "value", "attention_dense"],
         fan_in_fan_out=True,
-        task_type=TaskType.FEATURE_EXTRACTION  # GPT2Model은 CausalLM이 아님
+        task_type=TaskType.FEATURE_EXTRACTION   # GPT2Model은 CausalLM이 아님
       )
       self.gpt = get_peft_model(self.gpt, peft_config)
       self.gpt.print_trainable_parameters()
-
     ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
     ### YOUR CODE HERE
     self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
@@ -83,9 +81,9 @@ class GPT2SentimentClassifier(torch.nn.Module):
     ###       the training loop currently uses F.cross_entropy as the loss function.
     ### YOUR CODE HERE
     outputs = self.gpt(input_ids = input_ids, attention_mask = attention_mask)
-    # last_token = outputs['last_token']
-    last_hidden = outputs.last_hidden_state  # [B, T, H]
-    last_token = last_hidden[:, -1, :]   
+    last_token = outputs['last_token']
+    # last_hidden = outputs.last_hidden_state  # [B, T, H]
+    # last_token = last_hidden[:, -1, :]   
     x = self.dropout(last_token)
     logits = self.classifier(x)
 

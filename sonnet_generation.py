@@ -14,7 +14,6 @@ import torch
 
 import numpy as np
 import torch.nn.functional as F
-from transformers import AutoModel,GPT2Config
 from peft import get_peft_model, LoraConfig, TaskType
 from torch import nn
 from torch.utils.data import DataLoader
@@ -56,12 +55,7 @@ class SonnetGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    config = GPT2Config.from_pretrained(args.model_size)
-    config.d = args.d
-    config.l = args.l
-    config.num_heads = args.num_heads
-    self.gpt = AutoModel.from_pretrained(pretrained_model_name_or_path=args.model_size, config = config)
-    # self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
+    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
@@ -77,13 +71,13 @@ class SonnetGPT(nn.Module):
 
     elif args.fine_tune_mode == 'LoRA':
       peft_config = LoraConfig(
-        r=4,
-        lora_alpha=16,
+        r=8,
+        lora_alpha=32,
         lora_dropout=0.1,
         bias="none",
-        target_modules=["c_attn"],
+        target_modules=["query", "key", "value", "attention_dense"],
         fan_in_fan_out=True,
-        task_type=TaskType.FEATURE_EXTRACTION  # GPT2Model은 CausalLM이 아님
+        task_type=TaskType.CAUSAL_LM     # sonnet 은 casual LM
       )
       self.gpt = get_peft_model(self.gpt, peft_config)
       self.gpt.print_trainable_parameters()
