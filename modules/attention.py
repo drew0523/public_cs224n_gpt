@@ -3,25 +3,6 @@ import torch
 from einops import rearrange
 from torch import nn
 
-#for LoRA by MJK START
-class LoRA(nn.Module):
-  def __init__(self, hidden_size, r):
-    super().__init__()
-    self.A = nn.Linear(hidden_size, r, bias=False)
-    self.B = nn.Linear(r, hidden_size, bias=False)
-    self.scaling = r ** -0.5
-    self.dropout = nn.Dropout(0.1)
-    self.activation = nn.GELU()
-    nn.init.zeros_(self.B.weight)
-    nn.init.normal_(self.A.weight, std=0.02)
-  
-  def forward(self, x):
-    a = self.A(x)
-    a = self.activation(a)
-    a = self.dropout(a)
-    b = self.B(a) * self.scaling
-    return b
-#for LoRA by MJK END
 
 class CausalSelfAttention(nn.Module):
   def __init__(self, config):
@@ -39,17 +20,6 @@ class CausalSelfAttention(nn.Module):
     # implementation of transformer. Although it is a bit unusual, we empirically
     # observe that it yields better performance.
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-
-    #for LoRA by MJK START
-    for p in self.query.parameters():
-      p.requires_grad = False
-    for p in self.value.parameters():
-      p.requires_grad = False
-    r = 4
-    hidden_size = config.hidden_size
-    self.lora_q = LoRA(hidden_size, r)
-    self.lora_v = LoRA(hidden_size, r)
-    #for LoRA by MJK END
 
   def transform(self, x, linear_layer):
     # The corresponding linear_layer of k, v, q are used to project the hidden_state (x).
@@ -99,13 +69,6 @@ class CausalSelfAttention(nn.Module):
     value_layer = self.transform(hidden_states, self.value)
     query_layer = self.transform(hidden_states, self.query)
     
-    #for LoRA by MJK START
-    loar_q_out = self.transform(self.lora_q(hidden_states), self.query)
-    loar_v_out = self.transform(self.lora_v(hidden_states), self.value)
-    query_layer = query_layer + loar_q_out
-    value_layer = value_layer + loar_v_out
-    #for LoRA by MJK END
-
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value

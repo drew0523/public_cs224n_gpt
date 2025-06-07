@@ -13,7 +13,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2Tokenizer
 from sklearn.metrics import f1_score, accuracy_score
-from models.loar_utils import param_by_option, print_param_info
+from transformers import AutoModel
+from peft import get_peft_model, LoraConfig, TaskType
 from models.gpt2 import GPT2Model
 from optimizer import AdamW
 from tqdm import tqdm
@@ -43,17 +44,31 @@ class GPT2SentimentClassifier(torch.nn.Module):
   def __init__(self, config):
     super(GPT2SentimentClassifier, self).__init__()
     self.num_labels = config.num_labels
-    self.gpt = GPT2Model.from_pretrained()
+    self.gpt = AutoModel.from_pretrained('gpt2')
 
     # Pretrain mode does not require updating GPT paramters.
-    # assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
-    # for param in self.gpt.parameters():
-    #   if config.fine_tune_mode == 'last-linear-layer':
-    #     param.requires_grad = False
-    #   elif config.fine_tune_mode == 'full-model':
-    #     param.requires_grad = True
-    param_by_option(config, self.gpt)
-    print_param_info(self.gpt)
+    assert config.fine_tune_mode in ["last-linear-layer", "full-model", "LoRA"]
+    if config.fine_tune_mode == 'last-linear-layer':
+      for param in self.gpt.parameters():
+        param.requires_grad = False
+
+    elif config.fine_tune_mode == 'full-model':
+      for param in self.gpt.parameters():
+        param.requires_grad = True
+
+    elif config.fine_tune_mode == 'LoRA':
+      peft_config = LoraConfig(
+        r=4,
+        lora_alpha=16,
+        lora_dropout=0.1,
+        bias="none",
+        target_modules=["c_attn"],
+        fan_in_fan_out=True,
+        task_type=TaskType.FEATURE_EXTRACTION  # GPT2Model은 CausalLM이 아님
+      )
+      self.gpt = get_peft_model(self.gpt, peft_config)
+      self.gpt.print_trainable_parameters()
+
     ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
     ### YOUR CODE HERE
     self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
@@ -68,8 +83,9 @@ class GPT2SentimentClassifier(torch.nn.Module):
     ###       the training loop currently uses F.cross_entropy as the loss function.
     ### YOUR CODE HERE
     outputs = self.gpt(input_ids = input_ids, attention_mask = attention_mask)
-    last_token = outputs['last_token']
-
+    # last_token = outputs['last_token']
+    last_hidden = outputs.last_hidden_state  # [B, T, H]
+    last_token = last_hidden[:, -1, :]   
     x = self.dropout(last_token)
     logits = self.classifier(x)
 
@@ -273,17 +289,7 @@ def train(args):
 
   model = GPT2SentimentClassifier(config)
   model = model.to(device)
- # ─── 여기에 검증용 코드 추가 ───
-  print("--- 학습 가능한(Requires_grad=True) 파라미터 목록 ---")
-  for name, param in model.named_parameters():
-      if param.requires_grad:
-          print(f"{name:50} |  shape: {tuple(param.shape)}")
-  print("총 학습 가능 파라미터 개수:", 
-        sum(param.numel() for param in model.parameters() if param.requires_grad))
-  print("총 파라미터 개수:", 
-        sum(param.numel() for param in model.parameters()))
-  print("-----------------------------------------------\n")
-  # ──────────────────────────────────────────────────
+
   lr = args.lr
   optimizer = AdamW(model.parameters(), lr=lr)
   best_dev_acc = 0
@@ -367,7 +373,7 @@ def get_args():
   parser.add_argument("--epochs", type=int, default=10)
   parser.add_argument("--fine-tune-mode", type=str,
                       help='last-linear-layer: the GPT parameters are frozen and the task specific head parameters are updated; full-model: GPT parameters are updated as well',
-                      choices=('last-linear-layer', 'full-model', 'LoRA'), default="last-linear-layer")
+                      choices=('last-linear-layer', 'full-model','LoRA'), default="last-linear-layer")
   parser.add_argument("--use_gpu", action='store_true')
 
   parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)

@@ -14,7 +14,8 @@ import torch
 
 import numpy as np
 import torch.nn.functional as F
-
+from transformers import AutoModel,GPT2Config
+from peft import get_peft_model, LoraConfig, TaskType
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -29,7 +30,7 @@ from models.gpt2 import GPT2Model
 from optimizer import AdamW
 
 import sys
-from models.loar_utils import param_by_option, print_param_info
+
 # Resolve unicode error
 if sys.platform.startswith('win'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -55,15 +56,37 @@ class SonnetGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
+    config = GPT2Config.from_pretrained(args.model_size)
+    config.d = args.d
+    config.l = args.l
+    config.num_heads = args.num_heads
+    self.gpt = AutoModel.from_pretrained(pretrained_model_name_or_path=args.model_size, config = config)
+    # self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
     # By default, fine-tune the full model. TODO: this is maybe not idea.
-    # for param in self.gpt.parameters():
-    #   param.requires_grad = True
-    param_by_option(args, self.gpt)
-    print_param_info(self.gpt)
+    assert args.fine_tune_mode in ["last-linear-layer", "full-model", "LoRA"]
+    if args.fine_tune_mode == 'last-linear-layer':
+      for param in self.gpt.parameters():
+        param.requires_grad = False
+
+    elif args.fine_tune_mode == 'full-model':
+      for param in self.gpt.parameters():
+        param.requires_grad = True
+
+    elif args.fine_tune_mode == 'LoRA':
+      peft_config = LoraConfig(
+        r=4,
+        lora_alpha=16,
+        lora_dropout=0.1,
+        bias="none",
+        target_modules=["c_attn"],
+        fan_in_fan_out=True,
+        task_type=TaskType.FEATURE_EXTRACTION  # GPT2Model은 CausalLM이 아님
+      )
+      self.gpt = get_peft_model(self.gpt, peft_config)
+      self.gpt.print_trainable_parameters()
   def forward(self, input_ids, attention_mask):
     """
     This is similar to the forward for ParaphraseGPT, but we now want to produce a logit for each token in our sequence;
@@ -71,12 +94,14 @@ class SonnetGPT(nn.Module):
     not just the distribution over next tokens for the last token!
     """
     ### YOUR CODE HERE
-    output = self.gpt(input_ids, attention_mask)
+    # output = self.gpt(input_ids, attention_mask)
+    output = self.gpt(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
+
     hidden_states = output['last_hidden_state']
     batch_size, seq_length, hidden_dim = hidden_states.shape
     
-    logits = F.linear(hidden_states, self.gpt.word_embedding.weight)
-    
+    # logits = F.linear(hidden_states, self.gpt.word_embedding.weight)
+    logits = F.linear(hidden_states, self.gpt.get_input_embeddings().weight)
     return logits
 
 
@@ -254,11 +279,9 @@ def get_args():
   parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
   parser.add_argument("--model_size", type=str, help="The model size as specified on hugging face.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'], default='gpt2')
-
   parser.add_argument("--fine-tune-mode", type=str,
                       help='last-linear-layer: the GPT parameters are frozen and the task specific head parameters are updated; full-model: GPT parameters are updated as well',
-                      choices=('last-linear-layer', 'full-model', 'LoRA'), default="full-model")
-
+                      choices=('last-linear-layer', 'full-model','LoRA'), default="last-linear-layer")
   args = parser.parse_args()
   return args
 
