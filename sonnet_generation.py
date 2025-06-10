@@ -84,53 +84,54 @@ class SonnetGPT(nn.Module):
       return param.device
 
   @torch.no_grad()
-  def generate(self, encoding, temperature=0.7, top_p=0.9, max_length=128):
-    """
-    Generates an original sonnet using top-p sampling and softmax temperature.
+  def generate(self, encoding, temperature=0.7, top_p=0.9, max_length=128, repetition_threshold=3):
+      """
+      Generates an original sonnet using top-p sampling and softmax temperature.
+      Stops generation if any token repeats more than `repetition_threshold` times.
+      """
+      token_ids = encoding.to(self.get_device())
+      attention_mask = torch.ones(token_ids.shape, dtype=torch.int64).to(self.get_device())
 
-    TODO: this is probably not ideal. You can look at hugging face's model.generate(...) function for inspiration.
-    In particular, generating multiple sequences and choosing the best with beam search is one avenue. Top_k is another;
-    there are many.
-    """
-    token_ids = encoding.to(self.get_device())
-    attention_mask = torch.ones(token_ids.shape, dtype=torch.int64).to(self.get_device())
+      generated_tokens = token_ids[0].tolist()
+      token_counter = {}
 
-    # Track generated tokens for repetition penalty
-    generated_tokens = token_ids[0].tolist()  # Start with initial tokens
-    
-    for _ in range(max_length):
-      # Forward pass to get logits
-      logits_sequence = self.forward(token_ids, attention_mask)
-      logits_last_token = logits_sequence[:, -1, :] / temperature  # Apply temperature scaling
+      for _ in range(max_length):
+          logits_sequence = self.forward(token_ids, attention_mask)
+          logits_last_token = logits_sequence[:, -1, :] / temperature
+          probs = torch.nn.functional.softmax(logits_last_token, dim=-1)
 
-      # Convert logits to probabilities
-      probs = torch.nn.functional.softmax(logits_last_token, dim=-1)
+          # Top-p sampling
+          sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+          cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+          top_p_mask = cumulative_probs <= top_p
+          top_p_mask[..., 1:] = top_p_mask[..., :-1].clone()
+          top_p_mask[..., 0] = True
+          filtered_probs = sorted_probs * top_p_mask
+          filtered_probs /= filtered_probs.sum(dim=-1, keepdim=True)
 
-      # Top-p (nucleus) sampling
-      sorted_probs, sorted_indices = torch.sort(probs, descending=True)
-      cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-      top_p_mask = cumulative_probs <= top_p
-      top_p_mask[..., 1:] = top_p_mask[..., :-1].clone()  # Shift mask right for proper thresholding        
-      top_p_mask[..., 0] = True  # Always include the highest probability token
-      filtered_probs = sorted_probs * top_p_mask  # Zero out unlikely tokens
-      filtered_probs /= filtered_probs.sum(dim=-1, keepdim=True)  # Normalize probabilities
+          sampled_index = torch.multinomial(filtered_probs, 1)
+          sampled_token = sorted_indices.gather(dim=-1, index=sampled_index)
+          sampled_token_id = sampled_token.item()
 
-      # Sample from filtered distribution
-      sampled_index = torch.multinomial(filtered_probs, 1)
-      sampled_token = sorted_indices.gather(dim=-1, index=sampled_index)
+          # End-of-sequence check
+          if sampled_token_id == self.tokenizer.eos_token_id:
+              break
 
-      # Stop if end-of-sequence token is reached
-      if sampled_token.item() == self.tokenizer.eos_token_id:
-        break
+          # Repetition tracking
+          token_counter[sampled_token_id] = token_counter.get(sampled_token_id, 0) + 1
+          if token_counter[sampled_token_id] >= repetition_threshold:
+              print(f"Stopping due to repetition: token {sampled_token_id} repeated {repetition_threshold} times.")
+              break
 
-      # Append sampled token
-      token_ids = torch.cat([token_ids, sampled_token], dim=1)
-      attention_mask = torch.cat(
-        [attention_mask, torch.ones((1, 1), dtype=torch.int64).to(self.get_device())], dim=1
-      )
+          # Append sampled token
+          token_ids = torch.cat([token_ids, sampled_token], dim=1)
+          attention_mask = torch.cat(
+              [attention_mask, torch.ones((1, 1), dtype=torch.int64).to(self.get_device())], dim=1
+          )
 
-    generated_output = self.tokenizer.decode(token_ids[0].cpu().numpy().tolist())[3:]
-    return token_ids, generated_output
+      generated_output = self.tokenizer.decode(token_ids[0].cpu().numpy().tolist())[3:]
+      return token_ids, generated_output
+
 
 
 def save_model(model, optimizer, args, filepath):
@@ -195,7 +196,7 @@ def train(args):
     model.eval()
     for batch in held_out_sonnet_dataset:
       encoding = model.tokenizer(batch[1], return_tensors='pt', padding=True, truncation=True).to(device)
-      output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p)
+      output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p, repetition_threshold=args.repetition_threshold)
       print(f'{batch[1]}{output[1]}\n\n')
 
     # TODO: consider a stopping condition to prevent overfitting on the small dataset of sonnets.
@@ -219,7 +220,7 @@ def generate_submission_sonnets(args):
   for batch in held_out_sonnet_dataset:
     sonnet_id = batch[0]
     encoding = model.tokenizer(batch[1], return_tensors='pt', padding=False, truncation=True).to(device)
-    output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p)[0][0]
+    output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p, repetition_threshold=args.repetition_threshold)[0][0]
     decoded_output = model.tokenizer.decode(output)
     full_sonnet = f'{decoded_output}\n\n'
     generated_sonnets.append((sonnet_id, full_sonnet))
@@ -248,6 +249,7 @@ def get_args():
   parser.add_argument("--temperature", type=float, help="softmax temperature.", default=1.2)
   parser.add_argument("--top_p", type=float, help="Cumulative probability distribution for nucleus sampling.",
                       default=0.9)
+  parser.add_argument("--repetition_threshold", type=int, help="Number of times a token can repeat before stopping generation.", default=3)
 
   parser.add_argument("--batch_size", help='The training batch size.', type=int, default=8)
   parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
