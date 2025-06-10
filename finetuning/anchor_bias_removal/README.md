@@ -1,7 +1,5 @@
-GPT2 Anchored Bias: Multiple Choice Question이 주어질 경우 LLM이 첫 번째 선지를 찍는 편향 존재
-
-
-# <img src="figs/anchor.png" alt=drawing width="30"/> Anchored Answer: Unravelling Positional Bias in GPT-2's Multiple-Choice Questions
+# Anchored Answer: Unravelling Positional Bias in GPT-2's Multiple-Choice Questions
+>>GPT2 Anchored Bias: Multiple Choice Question이 주어질 경우 LLM이 첫 번째 선지를 찍는 편향 존재
 
 <p align="center">
 <img src="figs/prompt.png" alt=drawing width="400"/>
