@@ -1,3 +1,7 @@
+# GPT2 Anchored Bias: Multiple Choice Question이 주어질 경우 LLM이 첫 번째 선지를 찍는 편향 존재. 이를 완화하기 위해 도입.
+
+
+
 # <img src="figs/anchor.png" alt=drawing width="30"/> Anchored Answer: Unravelling Positional Bias in GPT-2's Multiple-Choice Questions
 
 <p align="center">
@@ -27,10 +31,6 @@ pip install -r requirements.txt
 ```
 
 ## Demo Notebooks
-See `demos` folder for the demo notebooks.
-
-## Citation
-If you find this code useful, please cite our paper:
 
 ```
 @article{li2024anchored,
@@ -40,7 +40,4 @@ If you find this code useful, please cite our paper:
   year={2024}
 }
 ```
-
-## Contributions and Contact
-If you have any questions or suggestions, please feel free to contact Ruizhe Li ({ruizhe.li}@abdn.ac.uk). If you find any bugs, please open an issue or submit a pull request.
 
