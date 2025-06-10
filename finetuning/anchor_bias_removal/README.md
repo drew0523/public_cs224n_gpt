@@ -1,4 +1,4 @@
-# GPT2 Anchored Bias: Multiple Choice Question이 주어질 경우 LLM이 첫 번째 선지를 찍는 편향 존재. 이를 완화하기 위해 도입.
+## GPT2 Anchored Bias: Multiple Choice Question이 주어질 경우 LLM이 첫 번째 선지를 찍는 편향 존재. 이를 완화하기 위해 도입
 
 
 
