@@ -14,7 +14,7 @@ import torch
 
 import numpy as np
 import torch.nn.functional as F
-
+from peft import get_peft_model, LoraConfig, TaskType
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -60,9 +60,27 @@ class SonnetGPT(nn.Module):
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
     # By default, fine-tune the full model. TODO: this is maybe not idea.
-    for param in self.gpt.parameters():
-      param.requires_grad = True
+    assert args.fine_tune_mode in ["last-linear-layer", "full-model", "LoRA"]
+    if args.fine_tune_mode == 'last-linear-layer':
+      for param in self.gpt.parameters():
+        param.requires_grad = False
 
+    elif args.fine_tune_mode == 'full-model':
+      for param in self.gpt.parameters():
+        param.requires_grad = True
+
+    elif args.fine_tune_mode == 'LoRA':
+      peft_config = LoraConfig(
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.1,
+        bias="none",
+        target_modules=["query", "key", "value", "attention_dense"],
+        fan_in_fan_out=True,
+        task_type=TaskType.CAUSAL_LM     # sonnet 은 casual LM
+      )
+      self.gpt = get_peft_model(self.gpt, peft_config)
+      self.gpt.print_trainable_parameters()
   def forward(self, input_ids, attention_mask):
     """
     This is similar to the forward for ParaphraseGPT, but we now want to produce a logit for each token in our sequence;
@@ -70,12 +88,14 @@ class SonnetGPT(nn.Module):
     not just the distribution over next tokens for the last token!
     """
     ### YOUR CODE HERE
-    output = self.gpt(input_ids, attention_mask)
+    # output = self.gpt(input_ids, attention_mask)
+    output = self.gpt(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
+
     hidden_states = output['last_hidden_state']
     batch_size, seq_length, hidden_dim = hidden_states.shape
     
-    logits = F.linear(hidden_states, self.gpt.word_embedding.weight)
-    
+    # logits = F.linear(hidden_states, self.gpt.word_embedding.weight)
+    logits = F.linear(hidden_states, self.gpt.get_input_embeddings().weight)
     return logits
 
 
@@ -253,7 +273,9 @@ def get_args():
   parser.add_argument("--lr", type=float, help="learning rate", default=1e-5)
   parser.add_argument("--model_size", type=str, help="The model size as specified on hugging face.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'], default='gpt2')
-
+  parser.add_argument("--fine-tune-mode", type=str,
+                      help='last-linear-layer: the GPT parameters are frozen and the task specific head parameters are updated; full-model: GPT parameters are updated as well',
+                      choices=('last-linear-layer', 'full-model','LoRA'), default="last-linear-layer")
   args = parser.parse_args()
   return args
 
