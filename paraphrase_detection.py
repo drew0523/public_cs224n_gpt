@@ -14,7 +14,7 @@ trains and evaluates your ParaphraseGPT model and writes the required submission
 import argparse
 import random
 import torch
-
+from peft import get_peft_model, LoraConfig, TaskType
 import numpy as np
 import torch.nn.functional as F
 
@@ -50,13 +50,32 @@ class ParaphraseGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
+
     self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.paraphrase_detection_head = nn.Linear(args.d, 2)  # Paraphrase detection has two outputs: 1 (yes) or 0 (no).
 
     # By default, fine-tune the full model.
-    for param in self.gpt.parameters():
-      param.requires_grad = True
+    assert args.fine_tune_mode in ["last-linear-layer", "full-model", "LoRA"]
+    if args.fine_tune_mode == 'last-linear-layer':
+      for param in self.gpt.parameters():
+        param.requires_grad = False
 
+    elif args.fine_tune_mode == 'full-model':
+      for param in self.gpt.parameters():
+        param.requires_grad = True
+
+    elif args.fine_tune_mode == 'LoRA':
+      peft_config = LoraConfig(
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.1,
+        bias="none",
+        target_modules=["query", "key", "value", "attention_dense"],
+        fan_in_fan_out=True,
+        task_type=TaskType.FEATURE_EXTRACTION   # GPT2Model은 CausalLM이 아님
+      )
+      self.gpt = get_peft_model(self.gpt, peft_config)
+      self.gpt.print_trainable_parameters()
   def forward(self, input_ids, attention_mask):
     """
     TODO: Predict the label of the token using the paraphrase_detection_head Linear layer.
@@ -76,6 +95,8 @@ class ParaphraseGPT(nn.Module):
     output = self.gpt(input_ids, attention_mask=attention_mask)
     sequence_output = output['last_hidden_state']
     last_token = output['last_token']
+    # last_hidden = output.last_hidden_state  # [B, T, H]
+    # last_token = last_hidden[:, -1, :]  
     logits = self.paraphrase_detection_head(last_token)
     return logits
 
@@ -212,7 +233,9 @@ def get_args():
   parser.add_argument("--model_size", type=str,
                       help="The model size as specified on hugging face. DO NOT use the xl model.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large'], default='gpt2')
-
+  parser.add_argument("--fine-tune-mode", type=str,
+                      help='last-linear-layer: the GPT parameters are frozen and the task specific head parameters are updated; full-model: GPT parameters are updated as well',
+                      choices=('last-linear-layer', 'full-model','LoRA'), default="last-linear-layer")
   args = parser.parse_args()
   return args
 

@@ -43,28 +43,41 @@ class GPT2Model(GPTPreTrainedModel):
 
     self.init_weights()
 
-  def embed(self, input_ids):
-    input_shape = input_ids.size()
-    seq_length = input_shape[1]
+  # def embed(self, input_ids):
+  #   input_shape = input_ids.size()
+  #   seq_length = input_shape[1]
 
-    inputs_embeds = None
+  #   inputs_embeds = None
 
-    ### YOUR CODE HERE
-    input_embeds = self.word_embedding(input_ids)
+  #   ### YOUR CODE HERE
+  #   input_embeds = self.word_embedding(input_ids)
 
+  #   pos_ids = self.position_ids[:, :seq_length]
+  #   pos_embeds = None
+
+  #   ### TODO: Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
+  #   ###       Then, add two embeddings together; then apply dropout and return.
+  #   ### YOUR CODE HERE
+  #   pos_embeds = self.pos_embedding(pos_ids)
+
+  #   hidden_states = input_embeds + pos_embeds
+  #   hidden_states = self.embed_dropout(hidden_states)
+
+  #   return hidden_states
+
+  def embed(self, input_ids=None, inputs_embeds=None):
+    if inputs_embeds is None:
+        input_embeds = self.word_embedding(input_ids)
+    else:
+        input_embeds = inputs_embeds
+
+    seq_length = input_embeds.size(1)
     pos_ids = self.position_ids[:, :seq_length]
-    pos_embeds = None
-
-    ### TODO: Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
-    ###       Then, add two embeddings together; then apply dropout and return.
-    ### YOUR CODE HERE
     pos_embeds = self.pos_embedding(pos_ids)
 
     hidden_states = input_embeds + pos_embeds
     hidden_states = self.embed_dropout(hidden_states)
-
     return hidden_states
-
 
   def encode(self, hidden_states, attention_mask):
     """
@@ -84,23 +97,48 @@ class GPT2Model(GPTPreTrainedModel):
 
     return hidden_states
 
-  def forward(self, input_ids, attention_mask):
-    """
-    input_ids: [batch_size, seq_len], seq_len is the max length of the batch
-    attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
-    """
-    # Get the embedding for each input token.
-    embedding_output = self.embed(input_ids=input_ids)
+  # def forward(self, input_ids, attention_mask):
+  #   """
+  #   input_ids: [batch_size, seq_len], seq_len is the max length of the batch
+  #   attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
+  #   """
+  #   # Get the embedding for each input token.
+  #   embedding_output = self.embed(input_ids=input_ids)
 
-    # Feed to a transformer (a stack of GPTLayers).
+  #   # Feed to a transformer (a stack of GPTLayers).
+  #   sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
+  #   sequence_output = self.final_layer_norm(sequence_output)
+
+  #   # Get the hidden state of the final token.
+  #   last_non_pad_idx = attention_mask.sum(dim=1) - 1  # Subtract 1 to get last index
+  #   last_token = sequence_output[torch.arange(sequence_output.shape[0]), last_non_pad_idx]
+
+  #   return {'last_hidden_state': sequence_output, 'last_token': last_token}
+  def forward(self, input_ids=None, attention_mask=None, inputs_embeds=None, **kwargs):
+    embedding_output = self.embed(input_ids=input_ids, inputs_embeds=inputs_embeds)
     sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
     sequence_output = self.final_layer_norm(sequence_output)
 
-    # Get the hidden state of the final token.
-    last_non_pad_idx = attention_mask.sum(dim=1) - 1  # Subtract 1 to get last index
+    last_non_pad_idx = attention_mask.sum(dim=1) - 1
     last_token = sequence_output[torch.arange(sequence_output.shape[0]), last_non_pad_idx]
 
     return {'last_hidden_state': sequence_output, 'last_token': last_token}
+  def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **kwargs):
+    # HuggingFace의 GPT2LMHeadModel에서 따온 기본 구현입니다.
+    if past_key_values is not None:
+        input_ids = input_ids[:, -1].unsqueeze(-1)  # only last token for generation
+
+    return {
+        "input_ids": input_ids,
+        "past_key_values": past_key_values,
+        "attention_mask": attention_mask,
+        **kwargs,
+    }
+  def get_input_embeddings(self):
+    return self.word_embedding
+  def set_input_embeddings(self, new_embeddings):
+    self.word_embedding = new_embeddings
+
 
   def hidden_state_to_token(self, hidden_state):
     """
@@ -114,47 +152,80 @@ class GPT2Model(GPTPreTrainedModel):
     
     return torch.matmul(hidden_state, E.t())
 
-
   @classmethod
   def from_pretrained(cls, model='gpt2', d=768, l=12, num_heads=12):
-    gpt_model = OpenAIGPT2Model.from_pretrained(model).eval()
-    our_model = GPT2Model(GPT2Config(hidden_size=d, num_hidden_layers=l,num_attention_heads=num_heads,
-                                     intermediate_size=d*3)).eval()
+    # 1) Hugging Face GPT-2 모델과 config 가져오기
+    hf_model = OpenAIGPT2Model.from_pretrained(model).eval()
+    hf_cfg   = hf_model.config   # 여기엔 .n_embd, .n_layer, .n_head 등이 있다
 
-    # Load word and positional embeddings.
-    our_model.word_embedding.load_state_dict(gpt_model.wte.state_dict())
-    our_model.pos_embedding.load_state_dict(gpt_model.wpe.state_dict())
+    # 2) 우리 GPT2Config 에 "올바른 속성 이름"으로 채워 넣기
+    our_cfg = GPT2Config(
+      hidden_size = hf_cfg.n_embd,                     # n_embd를 hidden_size로
+      num_hidden_layers   = hf_cfg.n_layer,            # n_layer
+      num_attention_heads = hf_cfg.n_head,             # n_head
+      intermediate_size   = hf_cfg.n_embd * 4,          # (원래는 4×지만, 예제에선 3×)
+      hidden_dropout_prob = hf_cfg.resid_pdrop,
+      layer_norm_eps      = hf_cfg.layer_norm_epsilon,
+      vocab_size          = hf_cfg.vocab_size,
+      max_position_embeddings = hf_cfg.n_positions,
+      pad_token_id        = hf_cfg.eos_token_id,
+    )
 
-    for i in range(l):
-      l = our_model.gpt_layers[i]
-      # Remap the Q,K,V weights from a conv1d to 3 linear projections
-      l.self_attention.query.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, :d].T
-      l.self_attention.query.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][:d]
-      l.self_attention.key.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, d:d*2].T
-      l.self_attention.key.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d:d*2]
-      l.self_attention.value.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.weight'][:, d*2:].T
-      l.self_attention.value.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_attn.bias'][d*2:]
+    # 3) LoRA가 포함된 구조로 모델 생성 (랜덤 초기화 상태)
+    our_model = GPT2Model(our_cfg).eval()
 
-      # Remap final dense layer in MHA.
-      l.attention_dense.weight.data = gpt_model.state_dict()[f'h.{i}.attn.c_proj.weight'].T
-      l.attention_dense.bias.data = gpt_model.state_dict()[f'h.{i}.attn.c_proj.bias']
+    # 4) Embedding weight 덮어쓰기
+    our_model.word_embedding.load_state_dict(
+      hf_model.get_input_embeddings().state_dict()
+    )
+    # fMJK
+    # our_model.pos_embedding.load_state_dict(
+    #   hf_model.get_position_embeddings().state_dict()
+    # )
+   # GPT2Model 내부에서 positional embedding은 transformer.wpe 에 있음
+    our_model.pos_embedding.load_state_dict(
+      hf_model.wpe.state_dict()
+    )
+    # 5) Transformer 레이어별 weight 복사: 'hf_cfg.n_layer'만큼 순회
+    for i in range(hf_cfg.n_layer):
+      our_layer = our_model.gpt_layers[i]
+      hf_layer  = hf_model.h[i]
 
-      # Remap attention layer norm.
-      l.attention_layer_norm.weight.data = gpt_model.state_dict()[f'h.{i}.ln_1.weight']
-      l.attention_layer_norm.bias.data = gpt_model.state_dict()[f'h.{i}.ln_1.bias']
+      # 5-a) c_attn (Q/K/V 묶음) → Query/Key/Value로 나눠서 복사
+      c_attn_w = hf_layer.attn.c_attn.weight.data   # [n_embd, 3*n_embd]
+      c_attn_b = hf_layer.attn.c_attn.bias.data     # [3*n_embd]
+      d = hf_cfg.n_embd
 
-      # Remap post-attention MLP layers.
-      l.interm_dense.weight.data = gpt_model.state_dict()[f'h.{i}.mlp.c_fc.weight'].T
-      l.interm_dense.bias.data = gpt_model.state_dict()[f'h.{i}.mlp.c_fc.bias']
-      l.out_dense.weight.data = gpt_model.state_dict()[f'h.{i}.mlp.c_proj.weight'].T
-      l.out_dense.bias.data = gpt_model.state_dict()[f'h.{i}.mlp.c_proj.bias']
+      # Query
+      our_layer.self_attention.query.weight.data.copy_(c_attn_w[:, :d].T)
+      our_layer.self_attention.query.bias.data.copy_(c_attn_b[:d])
+      # Key
+      our_layer.self_attention.key.weight.data.copy_(c_attn_w[:, d:2*d].T)
+      our_layer.self_attention.key.bias.data.copy_(c_attn_b[d:2*d])
+      # Value
+      our_layer.self_attention.value.weight.data.copy_(c_attn_w[:, 2*d:3*d].T)
+      our_layer.self_attention.value.bias.data.copy_(c_attn_b[2*d:3*d])
 
-      # Remap second layer norm weights.
-      l.out_layer_norm.weight.data = gpt_model.state_dict()[f'h.{i}.ln_2.weight']
-      l.out_layer_norm.bias.data = gpt_model.state_dict()[f'h.{i}.ln_2.bias']
+      # 5-b) attention_dense (c_proj)
+      our_layer.attention_dense.weight.data.copy_(hf_layer.attn.c_proj.weight.data.T)
+      our_layer.attention_dense.bias.data.copy_(hf_layer.attn.c_proj.bias.data)
 
-    # Remap the final layer norm values.
-    our_model.final_layer_norm.weight.data = gpt_model.state_dict()['ln_f.weight']
-    our_model.final_layer_norm.bias.data = gpt_model.state_dict()['ln_f.bias']
+      # 5-c) attention LayerNorm (ln_1)
+      our_layer.attention_layer_norm.weight.data.copy_(hf_layer.ln_1.weight.data)
+      our_layer.attention_layer_norm.bias.data.copy_(hf_layer.ln_1.bias.data)
+
+      # 5-d) MLP (c_fc + c_proj)
+      our_layer.interm_dense.weight.data.copy_(hf_layer.mlp.c_fc.weight.data.T)
+      our_layer.interm_dense.bias.data.copy_(hf_layer.mlp.c_fc.bias.data)
+      our_layer.out_dense.weight.data.copy_(hf_layer.mlp.c_proj.weight.data.T)
+      our_layer.out_dense.bias.data.copy_(hf_layer.mlp.c_proj.bias.data)
+
+      # 5-e) Feed-forward LayerNorm (ln_2)
+      our_layer.out_layer_norm.weight.data.copy_(hf_layer.ln_2.weight.data)
+      our_layer.out_layer_norm.bias.data.copy_(hf_layer.ln_2.bias.data)
+
+    # 6) 마지막 final LayerNorm (ln_f)
+    our_model.final_layer_norm.weight.data.copy_(hf_model.ln_f.weight.data)
+    our_model.final_layer_norm.bias.data.copy_(hf_model.ln_f.bias.data)
 
     return our_model

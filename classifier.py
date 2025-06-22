@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2Tokenizer
 from sklearn.metrics import f1_score, accuracy_score
-
+from peft import get_peft_model, LoraConfig, TaskType
 from models.gpt2 import GPT2Model
 from optimizer import AdamW
 from tqdm import tqdm
@@ -46,13 +46,27 @@ class GPT2SentimentClassifier(torch.nn.Module):
     self.gpt = GPT2Model.from_pretrained()
 
     # Pretrain mode does not require updating GPT paramters.
-    assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
-    for param in self.gpt.parameters():
-      if config.fine_tune_mode == 'last-linear-layer':
+    assert config.fine_tune_mode in ["last-linear-layer", "full-model", "LoRA"]
+    if config.fine_tune_mode == 'last-linear-layer':
+      for param in self.gpt.parameters():
         param.requires_grad = False
-      elif config.fine_tune_mode == 'full-model':
+
+    elif config.fine_tune_mode == 'full-model':
+      for param in self.gpt.parameters():
         param.requires_grad = True
 
+    elif config.fine_tune_mode == 'LoRA':
+      peft_config = LoraConfig(
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.1,
+        bias="none",
+        target_modules=["query", "key", "value", "attention_dense"],
+        fan_in_fan_out=True,
+        task_type=TaskType.FEATURE_EXTRACTION   # GPT2Model은 CausalLM이 아님
+      )
+      self.gpt = get_peft_model(self.gpt, peft_config)
+      self.gpt.print_trainable_parameters()
     ### TODO: Create any instance variables you need to classify the sentiment of BERT embeddings.
     ### YOUR CODE HERE
     self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
@@ -68,7 +82,8 @@ class GPT2SentimentClassifier(torch.nn.Module):
     ### YOUR CODE HERE
     outputs = self.gpt(input_ids = input_ids, attention_mask = attention_mask)
     last_token = outputs['last_token']
-
+    # last_hidden = outputs.last_hidden_state  # [B, T, H]
+    # last_token = last_hidden[:, -1, :]   
     x = self.dropout(last_token)
     logits = self.classifier(x)
 
@@ -356,7 +371,7 @@ def get_args():
   parser.add_argument("--epochs", type=int, default=10)
   parser.add_argument("--fine-tune-mode", type=str,
                       help='last-linear-layer: the GPT parameters are frozen and the task specific head parameters are updated; full-model: GPT parameters are updated as well',
-                      choices=('last-linear-layer', 'full-model'), default="last-linear-layer")
+                      choices=('last-linear-layer', 'full-model','LoRA'), default="last-linear-layer")
   parser.add_argument("--use_gpu", action='store_true')
 
   parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
