@@ -43,28 +43,6 @@ class GPT2Model(GPTPreTrainedModel):
 
     self.init_weights()
 
-  # def embed(self, input_ids):
-  #   input_shape = input_ids.size()
-  #   seq_length = input_shape[1]
-
-  #   inputs_embeds = None
-
-  #   ### YOUR CODE HERE
-  #   input_embeds = self.word_embedding(input_ids)
-
-  #   pos_ids = self.position_ids[:, :seq_length]
-  #   pos_embeds = None
-
-  #   ### TODO: Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
-  #   ###       Then, add two embeddings together; then apply dropout and return.
-  #   ### YOUR CODE HERE
-  #   pos_embeds = self.pos_embedding(pos_ids)
-
-  #   hidden_states = input_embeds + pos_embeds
-  #   hidden_states = self.embed_dropout(hidden_states)
-
-  #   return hidden_states
-
   def embed(self, input_ids=None, inputs_embeds=None):
     if inputs_embeds is None:
         input_embeds = self.word_embedding(input_ids)
@@ -114,6 +92,7 @@ class GPT2Model(GPTPreTrainedModel):
   #   last_token = sequence_output[torch.arange(sequence_output.shape[0]), last_non_pad_idx]
 
   #   return {'last_hidden_state': sequence_output, 'last_token': last_token}
+  
   def forward(self, input_ids=None, attention_mask=None, inputs_embeds=None, **kwargs):
     embedding_output = self.embed(input_ids=input_ids, inputs_embeds=inputs_embeds)
     sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
@@ -123,6 +102,7 @@ class GPT2Model(GPTPreTrainedModel):
     last_token = sequence_output[torch.arange(sequence_output.shape[0]), last_non_pad_idx]
 
     return {'last_hidden_state': sequence_output, 'last_token': last_token}
+  
   def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **kwargs):
     # HuggingFace의 GPT2LMHeadModel에서 따온 기본 구현입니다.
     if past_key_values is not None:
