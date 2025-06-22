@@ -7,7 +7,7 @@ additional sources of data, or if you change how the Quora dataset is processed 
 """
 
 import csv
-
+import random
 import re
 import torch
 
@@ -161,3 +161,61 @@ class SonnetsDataset(Dataset):
     }
 
     return batched_data
+
+
+class PairwiseSonnetsDataset(Dataset):
+    """DPO 학습을 위한 (prompt, winner, loser) 쌍을 생성하는 데이터셋."""
+    def __init__(self, file_path):
+        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.sonnets = self._load_sonnets(file_path)
+
+    def _load_sonnets(self, file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        sonnets = re.split(r'\n\s*\d+\s*\n', text)[1:]
+        return [s.strip() for s in sonnets]
+
+    def __len__(self):
+        return len(self.sonnets)
+
+    def __getitem__(self, idx):
+        sonnet = self.sonnets[idx]
+        lines = sonnet.split('\n')
+        
+        prompt = '\n'.join(lines[:3])
+        
+        # Winner는 원본 소네트의 뒷부분
+        winner_completion = '\n'.join(lines[3:])
+        
+        # Loser는 뒷부분의 라인 순서를 섞어서 생성
+        completion_lines = lines[3:]
+        random.shuffle(completion_lines)
+        loser_completion = '\n'.join(completion_lines)
+
+        # 만약 섞었음에도 불구하고 순서가 같다면(매우 드문 경우), 다시 섞음
+        if winner_completion == loser_completion:
+            random.shuffle(completion_lines)
+            loser_completion = '\n'.join(completion_lines)
+
+        return (prompt, winner_completion, loser_completion)
+
+
+    def collate_fn(self, all_data):
+        prompts = [x[0] for x in all_data]
+        winner_completions = [x[1] for x in all_data]
+        loser_completions = [x[2] for x in all_data]
+
+        encoding_prompt = self.tokenizer(prompts, return_tensors='pt', padding=True, truncation=True)
+        # DPO에서는 prompt 이후의 completion 부분만 필요함
+        encoding_winner = self.tokenizer(winner_completions, return_tensors='pt', padding=True, truncation=True)
+        encoding_loser = self.tokenizer(loser_completions, return_tensors='pt', padding=True, truncation=True)
+        
+        return {
+            'prompt_ids': encoding_prompt['input_ids'],
+            'prompt_mask': encoding_prompt['attention_mask'],
+            'winner_ids': encoding_winner['input_ids'],
+            'winner_mask': encoding_winner['attention_mask'],
+            'loser_ids': encoding_loser['input_ids'],
+            'loser_mask': encoding_loser['attention_mask'],
+        }
